@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useDropzone } from "react-dropzone";
+import axios from "axios";
 import { 
   CloudArrowUpIcon, 
   DocumentTextIcon,
@@ -41,28 +42,22 @@ export default function FileUpload({ onFileUpload }: FileUploadProps) {
         setUploadProgress(prev => ({ ...prev, [fileId]: progress }));
       }, 200);
       
-      // Get auth token from localStorage
-      const token = localStorage.getItem('token');
-      if (!token) {
-        throw new Error('Authentication required. Please sign in.');
-      }
-      
-      // Upload to server
-      const response = await fetch('/api/files/upload', {
-        method: 'POST',
-        body: formData,
+      // Upload to server using axios with credentials to include cookies
+      const response = await axios.post('/api/files/upload', formData, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Content-Type': 'multipart/form-data'
+        },
+        withCredentials: true, // This ensures cookies are sent with the request
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(prev => ({ ...prev, [fileId]: Math.min(percentCompleted, 90) }));
+          }
         }
       });
       
       // Clear interval
       clearInterval(interval);
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
-      }
       
       // Set progress to 100%
       setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
@@ -75,13 +70,12 @@ export default function FileUpload({ onFileUpload }: FileUploadProps) {
         });
       }, 1500);
       
-      // Get response data
-      const data = await response.json();
-      return data.file;
+      // Return file data
+      return response.data.file;
       
     } catch (error: any) {
       console.error('Upload error:', error);
-      setUploadError(error.message || 'Upload failed');
+      setUploadError(error.response?.data?.error || error.message || 'Upload failed');
       
       // Remove progress bar
       setUploadProgress(prev => {
