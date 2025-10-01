@@ -9,44 +9,27 @@ export interface AuthRequest extends NextRequest {
   user?: any;
 }
 
+// For API routes, do not return NextResponse.next()
 export async function authMiddleware(req: AuthRequest) {
   try {
-    // Get token from header
-    const authHeader = req.headers.get('authorization');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'Unauthorized - No token provided' },
-        { status: 401 }
-      );
+    const token = req.cookies.get('token')?.value;
+
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const token = authHeader.split(' ')[1];
-    
-    // Verify token
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
-    
-    // Connect to database
+
     await connectToDatabase();
-    
-    // Get user from database
+
     const user = await User.findById(decoded.id).select('-password');
-    
     if (!user) {
-      return NextResponse.json(
-        { error: 'Unauthorized - User not found' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
-    
-    // Attach user to request
-    req.user = user;
-    
-    return null; // No error, continue
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Unauthorized - Invalid token' },
-      { status: 401 }
-    );
+
+    req.user = user; // attach user to request
+    return null; // indicate success
+  } catch (err) {
+    return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
   }
 }

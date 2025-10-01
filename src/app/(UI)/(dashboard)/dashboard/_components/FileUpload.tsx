@@ -141,7 +141,6 @@ export default function FileUpload({ onFileUpload }: FileUploadProps) {
         </div>
 
         <motion.div
-           {...getRootProps({ refKey: "innerRef" })}
           className={`relative border-2 border-dashed rounded-3xl p-8 text-center cursor-pointer transition-all duration-300 ${
             isUploading ? "opacity-70 pointer-events-none" : ""
           } ${
@@ -152,46 +151,49 @@ export default function FileUpload({ onFileUpload }: FileUploadProps) {
           whileHover={{ scale: isUploading ? 1 : 1.02 }}
           whileTap={{ scale: isUploading ? 1 : 0.98 }}
         >
-          <input {...getInputProps()} disabled={isUploading} />
-          
-          {/* Background Animation */}
-          <motion.div
-            className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-3xl opacity-0"
-            animate={{ opacity: isDragActive ? 1 : 0 }}
-            transition={{ duration: 0.3 }}
-          />
-
-          <div className="relative z-10">
+          {/* Dropzone functionality on inner div */}
+          <div {...getRootProps()}>
+            <input {...getInputProps()} disabled={isUploading} />
+            
+            {/* Background Animation */}
             <motion.div
-              animate={{ 
-                y: isDragActive ? -10 : 0,
-                rotate: isDragActive ? 5 : 0 
-              }}
+              className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-3xl opacity-0"
+              animate={{ opacity: isDragActive ? 1 : 0 }}
               transition={{ duration: 0.3 }}
-            >
-              <CloudArrowUpIcon className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-            </motion.div>
-            
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              {isDragActive ? "Drop your PDFs here" : "Upload PDF Files"}
-            </h3>
-            
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              Support for PDF files up to 50MB each
-            </p>
-            
-            <motion.button
-              type="button"
-              className={`inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-medium ${
-                isUploading ? "opacity-70 cursor-not-allowed" : ""
-              }`}
-              whileHover={{ scale: isUploading ? 1 : 1.05, y: isUploading ? 0 : -2 }}
-              whileTap={{ scale: isUploading ? 1 : 0.95 }}
-              disabled={isUploading}
-            >
-              <DocumentTextIcon className="w-5 h-5 mr-2" />
-              {isUploading ? "Uploading..." : "Choose Files"}
-            </motion.button>
+            />
+
+            <div className="relative z-10">
+              <motion.div
+                animate={{ 
+                  y: isDragActive ? -10 : 0,
+                  rotate: isDragActive ? 5 : 0 
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                <CloudArrowUpIcon className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+              </motion.div>
+              
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                {isDragActive ? "Drop your PDFs here" : "Upload PDF Files"}
+              </h3>
+              
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                Support for PDF files up to 50MB each
+              </p>
+              
+              <motion.button
+                type="button"
+                className={`inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 font-medium ${
+                  isUploading ? "opacity-70 cursor-not-allowed" : ""
+                }`}
+                whileHover={{ scale: isUploading ? 1 : 1.05, y: isUploading ? 0 : -2 }}
+                whileTap={{ scale: isUploading ? 1 : 0.95 }}
+                disabled={isUploading}
+              >
+                <DocumentTextIcon className="w-5 h-5 mr-2" />
+                {isUploading ? "Uploading..." : "Choose Files"}
+              </motion.button>
+            </div>
           </div>
         </motion.div>
       </motion.div>

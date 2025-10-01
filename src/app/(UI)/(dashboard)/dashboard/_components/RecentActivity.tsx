@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { 
+import {
   DocumentTextIcon,
   CloudArrowUpIcon,
   PencilSquareIcon,
@@ -11,6 +11,7 @@ import {
   ClockIcon
 } from "@heroicons/react/24/outline";
 import { PDFFile } from "../../dashboard/page";
+
 
 interface RecentActivityProps {
   files: PDFFile[];
@@ -47,7 +48,7 @@ export default function RecentActivity({ files }: RecentActivityProps) {
   // Generate sample activity data based on files
   const generateActivities = (): ActivityItem[] => {
     const activities: ActivityItem[] = [];
-    
+
     // Add upload activities for each file
     files.forEach(file => {
       activities.push({
@@ -97,26 +98,32 @@ export default function RecentActivity({ files }: RecentActivityProps) {
     ];
 
     return [...activities, ...sampleActivities]
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-      .slice(0, 10); // Show latest 10 activities
+      .sort((a, b) => {
+        const dateA = a.timestamp instanceof Date ? a.timestamp : new Date(a.timestamp);
+        const dateB = b.timestamp instanceof Date ? b.timestamp : new Date(b.timestamp);
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 10);
+
   };
 
   const activities = generateActivities();
 
-  const formatTime = (date: Date) => {
+  const formatTime = (date: Date | string) => {
+    const dateObj = date instanceof Date ? date : new Date(date); // ensure it's a Date
     const now = new Date();
-    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
-    
+    const diffInHours = Math.floor((now.getTime() - dateObj.getTime()) / (1000 * 60 * 60));
+
     if (diffInHours < 1) {
-      const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+      const diffInMinutes = Math.floor((now.getTime() - dateObj.getTime()) / (1000 * 60));
       return diffInMinutes < 1 ? 'Just now' : `${diffInMinutes}m ago`;
     } else if (diffInHours < 24) {
       return `${diffInHours}h ago`;
     } else {
-      const diffInDays = Math.floor(diffInHours / 24);
-      return `${diffInDays}d ago`;
+      return `${Math.floor(diffInHours / 24)}d ago`;
     }
   };
+
 
   return (
     <motion.div
@@ -125,7 +132,7 @@ export default function RecentActivity({ files }: RecentActivityProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
     >
-      
+
       {/* Header */}
       <div className="p-6 border-b border-gray-200/50 dark:border-gray-700/50">
         <div className="flex items-center justify-between">
@@ -152,7 +159,7 @@ export default function RecentActivity({ files }: RecentActivityProps) {
             {activities.map((activity, index) => {
               const IconComponent = activityIcons[activity.type];
               const colorClass = activityColors[activity.type];
-              
+
               return (
                 <motion.div
                   key={activity.id}
@@ -181,7 +188,7 @@ export default function RecentActivity({ files }: RecentActivityProps) {
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
                           {activity.description}
                         </p>
-                        
+
                         {/* File Reference */}
                         {activity.fileName && (
                           <motion.div
@@ -189,14 +196,14 @@ export default function RecentActivity({ files }: RecentActivityProps) {
                             whileHover={{ scale: 1.02 }}
                           >
                             <DocumentTextIcon className="w-3 h-3 mr-1" />
-                            {activity.fileName.length > 25 
-                              ? `${activity.fileName.substring(0, 25)}...` 
+                            {activity.fileName.length > 25
+                              ? `${activity.fileName.substring(0, 25)}...`
                               : activity.fileName
                             }
                           </motion.div>
                         )}
                       </div>
-                      
+
                       {/* Timestamp */}
                       <div className="flex-shrink-0 ml-4">
                         <span className="text-xs text-gray-400 dark:text-gray-500">
@@ -231,11 +238,11 @@ export default function RecentActivity({ files }: RecentActivityProps) {
             <div className="text-center">
               <motion.div
                 className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-2xl flex items-center justify-center mx-auto mb-4"
-                animate={{ 
+                animate={{
                   rotate: [0, 5, -5, 0],
                   scale: [1, 1.05, 1]
                 }}
-                transition={{ 
+                transition={{
                   duration: 4,
                   repeat: Infinity,
                   ease: "easeInOut"

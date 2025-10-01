@@ -1,19 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { 
-  EyeIcon, 
-  EyeSlashIcon, 
-  EnvelopeIcon, 
+import {
+  EyeIcon,
+  EyeSlashIcon,
+  EnvelopeIcon,
   LockClosedIcon,
   UserIcon,
   CheckIcon,
-  ArrowRightIcon 
+  ArrowRightIcon
 } from "@heroicons/react/24/outline";
 import { signupUser, setAuthToken } from "@/lib/auth";
+import GoogleLoginButton from "@/components/GoogleLoginButton";
+
+declare global {
+  interface Window {
+    google: any;
+  }
+}
 
 export default function SignupPage() {
   const router = useRouter();
@@ -29,7 +36,7 @@ export default function SignupPage() {
     newsletter: true
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [apiError, setApiError] = useState<string | null>(null);
 
   const passwordRequirements = [
@@ -41,50 +48,29 @@ export default function SignupPage() {
   ];
 
   const validateForm = () => {
-    const newErrors: {[key: string]: string} = {};
-    
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = "First name is required";
-    }
-    
-    if (!formData.lastName.trim()) {
-      newErrors.lastName = "Last name is required";
-    }
-    
-    if (!formData.email) {
-      newErrors.email = "Email is required";
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email address";
-    }
-    
-    if (!formData.password) {
-      newErrors.password = "Password is required";
-    } else if (!passwordRequirements.every(req => req.test(formData.password))) {
-      newErrors.password = "Password does not meet all requirements";
-    }
-    
-    if (!formData.confirmPassword) {
-      newErrors.confirmPassword = "Please confirm your password";
-    } else if (formData.password !== formData.confirmPassword) {
-      newErrors.confirmPassword = "Passwords do not match";
-    }
-    
-    if (!formData.acceptTerms) {
-      newErrors.acceptTerms = "You must accept the terms and conditions";
-    }
-    
+    const newErrors: { [key: string]: string } = {};
+
+    if (!formData.firstName.trim()) newErrors.firstName = "First name is required";
+    if (!formData.lastName.trim()) newErrors.lastName = "Last name is required";
+    if (!formData.email) newErrors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = "Please enter a valid email address";
+    if (!formData.password) newErrors.password = "Password is required";
+    else if (!passwordRequirements.every(req => req.test(formData.password))) newErrors.password = "Password does not meet all requirements";
+    if (!formData.confirmPassword) newErrors.confirmPassword = "Please confirm your password";
+    else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = "Passwords do not match";
+    if (!formData.acceptTerms) newErrors.acceptTerms = "You must accept the terms and conditions";
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!validateForm()) return;
-    
+
     setIsLoading(true);
     setApiError(null);
-    
+
     try {
       const response = await signupUser({
         firstName: formData.firstName,
@@ -93,11 +79,8 @@ export default function SignupPage() {
         password: formData.password,
         newsletter: formData.newsletter
       });
-      
-      // Store token and redirect
+
       setAuthToken(response.token);
-      
-      // Redirect to dashboard
       router.push('/dashboard');
     } catch (error: any) {
       setApiError(error.message);
@@ -108,21 +91,56 @@ export default function SignupPage() {
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: "" }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: "" }));
+    if (apiError) setApiError(null);
+  };
+
+  // ------------------- Google Signup -------------------
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.google) {
+      window.google.accounts.id.initialize({
+        client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+        callback: handleGoogleResponse
+      });
+      window.google.accounts.id.renderButton(
+        document.getElementById("google-signup-btn"),
+        { theme: "outline", size: "large", width: "100%" }
+      );
     }
-    if (apiError) {
-      setApiError(null);
+  }, []);
+
+  const handleGoogleResponse = async (response: any) => {
+    const token = response.credential;
+    if (!token) {
+      setApiError("Google signup failed: no token received");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const res = await fetch("/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+        credentials: "include"
+      });
+
+      const data = await res.json();
+      if (data.success) router.push("/dashboard");
+      else setApiError(data.error || "Google signup failed");
+    } catch (err: any) {
+      setApiError(err.message || "Something went wrong");
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-gray-900 dark:via-purple-900 dark:to-gray-900 px-4 sm:px-6 lg:px-8 py-12 overflow-hidden">
-      
+
       {/* Animated Background Elements */}
       <div className="fixed inset-0 pointer-events-none">
-        <motion.div 
+        <motion.div
           className="absolute top-1/3 left-1/5 w-72 h-72 bg-gradient-to-r from-purple-400/20 to-pink-500/20 rounded-full blur-3xl"
           animate={{
             scale: [1, 1.3, 1],
@@ -130,7 +148,7 @@ export default function SignupPage() {
           }}
           transition={{ duration: 30, repeat: Infinity }}
         />
-        <motion.div 
+        <motion.div
           className="absolute bottom-1/3 right-1/5 w-96 h-96 bg-gradient-to-r from-blue-400/20 to-cyan-500/20 rounded-full blur-3xl"
           animate={{
             scale: [1.3, 1, 1.3],
@@ -153,7 +171,7 @@ export default function SignupPage() {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.2 }}
         >
-          <motion.h1 
+          <motion.h1
             className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2"
             whileHover={{ scale: 1.05 }}
           >
@@ -174,7 +192,7 @@ export default function SignupPage() {
           {/* Glassmorphism Card */}
           <div className="absolute -inset-1 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-3xl blur-sm"></div>
           <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 p-8">
-            
+
             {/* API Error Message */}
             {apiError && (
               <motion.div
@@ -185,9 +203,9 @@ export default function SignupPage() {
                 {apiError}
               </motion.div>
             )}
-            
+
             <form onSubmit={handleSubmit} className="space-y-6">
-              
+
               {/* Name Fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* First Name */}
@@ -209,17 +227,16 @@ export default function SignupPage() {
                       type="text"
                       value={formData.firstName}
                       onChange={(e) => handleInputChange("firstName", e.target.value)}
-                      className={`w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-gray-700/50 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${
-                        errors.firstName 
-                          ? "border-red-300 dark:border-red-600" 
+                      className={`w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-gray-700/50 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${errors.firstName
+                          ? "border-red-300 dark:border-red-600"
                           : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
-                      }`}
+                        }`}
                       placeholder="John"
                       whileFocus={{ scale: 1.02 }}
                     />
                   </div>
                   {errors.firstName && (
-                    <motion.p 
+                    <motion.p
                       className="text-red-500 text-sm"
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -248,17 +265,16 @@ export default function SignupPage() {
                       type="text"
                       value={formData.lastName}
                       onChange={(e) => handleInputChange("lastName", e.target.value)}
-                      className={`w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-gray-700/50 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${
-                        errors.lastName 
-                          ? "border-red-300 dark:border-red-600" 
+                      className={`w-full pl-12 pr-4 py-3 bg-white/50 dark:bg-gray-700/50 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${errors.lastName
+                          ? "border-red-300 dark:border-red-600"
                           : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
-                      }`}
+                        }`}
                       placeholder="Doe"
                       whileFocus={{ scale: 1.02 }}
                     />
                   </div>
                   {errors.lastName && (
-                    <motion.p 
+                    <motion.p
                       className="text-red-500 text-sm"
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -288,17 +304,16 @@ export default function SignupPage() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className={`w-full pl-12 pr-4 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${
-                      errors.email 
-                        ? "border-red-300 dark:border-red-600" 
+                    className={`w-full pl-12 pr-4 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${errors.email
+                        ? "border-red-300 dark:border-red-600"
                         : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
-                    }`}
+                      }`}
                     placeholder="john@example.com"
                     whileFocus={{ scale: 1.02 }}
                   />
                 </div>
                 {errors.email && (
-                  <motion.p 
+                  <motion.p
                     className="text-red-500 text-sm"
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -327,11 +342,10 @@ export default function SignupPage() {
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className={`w-full pl-12 pr-14 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${
-                      errors.password 
-                        ? "border-red-300 dark:border-red-600" 
+                    className={`w-full pl-12 pr-14 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${errors.password
+                        ? "border-red-300 dark:border-red-600"
                         : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
-                    }`}
+                      }`}
                     placeholder="Create a strong password"
                     whileFocus={{ scale: 1.02 }}
                   />
@@ -361,19 +375,17 @@ export default function SignupPage() {
                     {passwordRequirements.map((req, index) => (
                       <motion.div
                         key={index}
-                        className={`flex items-center text-sm ${
-                          req.test(formData.password) 
-                            ? "text-green-600 dark:text-green-400" 
+                        className={`flex items-center text-sm ${req.test(formData.password)
+                            ? "text-green-600 dark:text-green-400"
                             : "text-gray-500 dark:text-gray-400"
-                        }`}
+                          }`}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.1 }}
                       >
-                        <CheckIcon 
-                          className={`w-4 h-4 mr-2 ${
-                            req.test(formData.password) ? "text-green-500" : "text-gray-300"
-                          }`}
+                        <CheckIcon
+                          className={`w-4 h-4 mr-2 ${req.test(formData.password) ? "text-green-500" : "text-gray-300"
+                            }`}
                         />
                         {req.label}
                       </motion.div>
@@ -382,7 +394,7 @@ export default function SignupPage() {
                 )}
 
                 {errors.password && (
-                  <motion.p 
+                  <motion.p
                     className="text-red-500 text-sm"
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -411,13 +423,12 @@ export default function SignupPage() {
                     type={showConfirmPassword ? "text" : "password"}
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className={`w-full pl-12 pr-14 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${
-                      errors.confirmPassword 
-                        ? "border-red-300 dark:border-red-600" 
+                    className={`w-full pl-12 pr-14 py-4 bg-white/50 dark:bg-gray-700/50 border-2 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300 placeholder-gray-400 ${errors.confirmPassword
+                        ? "border-red-300 dark:border-red-600"
                         : formData.confirmPassword && formData.password === formData.confirmPassword
-                        ? "border-green-300 dark:border-green-600"
-                        : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
-                    }`}
+                          ? "border-green-300 dark:border-green-600"
+                          : "border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500"
+                      }`}
                     placeholder="Confirm your password"
                     whileFocus={{ scale: 1.02 }}
                   />
@@ -436,7 +447,7 @@ export default function SignupPage() {
                   </motion.button>
                 </div>
                 {errors.confirmPassword && (
-                  <motion.p 
+                  <motion.p
                     className="text-red-500 text-sm"
                     initial={{ opacity: 0, y: -10 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -444,58 +455,6 @@ export default function SignupPage() {
                     {errors.confirmPassword}
                   </motion.p>
                 )}
-              </motion.div>
-
-              {/* Checkboxes */}
-              <motion.div
-                className="space-y-4"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.65 }}
-              >
-                {/* Terms and Conditions */}
-                <label className="flex items-start">
-                  <motion.input
-                    type="checkbox"
-                    checked={formData.acceptTerms}
-                    onChange={(e) => handleInputChange("acceptTerms", e.target.checked)}
-                    className="w-5 h-5 mt-0.5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
-                    whileHover={{ scale: 1.1 }}
-                  />
-                  <span className="ml-3 text-sm text-gray-600 dark:text-gray-300">
-                    I accept the{" "}
-                    <Link href="/terms" className="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 font-medium">
-                      Terms and Conditions
-                    </Link>{" "}
-                    and{" "}
-                    <Link href="/privacy" className="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 font-medium">
-                      Privacy Policy
-                    </Link>
-                  </span>
-                </label>
-                {errors.acceptTerms && (
-                  <motion.p 
-                    className="text-red-500 text-sm ml-8"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    {errors.acceptTerms}
-                  </motion.p>
-                )}
-
-                {/* Newsletter Subscription */}
-                <label className="flex items-center">
-                  <motion.input
-                    type="checkbox"
-                    checked={formData.newsletter}
-                    onChange={(e) => handleInputChange("newsletter", e.target.checked)}
-                    className="w-5 h-5 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500 focus:ring-2"
-                    whileHover={{ scale: 1.1 }}
-                  />
-                  <span className="ml-3 text-sm text-gray-600 dark:text-gray-300">
-                    Send me updates about new features and special offers
-                  </span>
-                </label>
               </motion.div>
 
               {/* Sign Up Button */}
@@ -531,6 +490,30 @@ export default function SignupPage() {
                   initial={false}
                 />
               </motion.button>
+              <motion.div
+                className="relative my-8"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.6, delay: 0.8 }}
+              >
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-4 bg-white dark:bg-gray-800 text-gray-500">Or continue with</span>
+                </div>
+              </motion.div>
+
+              {/* Social Login Buttons */}
+              <motion.div
+              className="space-y-3"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.9 }}
+            >
+              {/* Google Login */}
+              <GoogleLoginButton />
+            </motion.div>
             </form>
 
             {/* Sign In Link */}
@@ -542,7 +525,7 @@ export default function SignupPage() {
             >
               <p className="text-gray-600 dark:text-gray-300">
                 Already have an account?{" "}
-                <Link 
+                <Link
                   href="/login"
                   className="text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 font-semibold transition-colors"
                 >
