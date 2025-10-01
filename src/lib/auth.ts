@@ -1,15 +1,17 @@
-import axios from 'axios';
+import axios, { AxiosError } from "axios";
 
-// Types
+// ================== Types ==================
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  image?: string;
+}
+
 export interface AuthResponse {
   success: boolean;
   token: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    image?: string;
-  };
+  user: AuthUser;
 }
 
 export interface LoginCredentials {
@@ -25,55 +27,82 @@ export interface SignupCredentials {
   newsletter?: boolean;
 }
 
-// API functions
-export const loginUser = async (credentials: LoginCredentials): Promise<AuthResponse> => {
+interface APIError {
+  error: string;
+}
+
+// ================== API Functions ==================
+
+// Login
+export const loginUser = async (
+  credentials: LoginCredentials
+): Promise<AuthResponse> => {
   try {
-    const response = await axios.post('/api/auth/signin', credentials);
+    const response = await axios.post<AuthResponse>(
+      "/api/auth/signin",
+      credentials
+    );
     return response.data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.error || 'Login failed');
+  } catch (err) {
+    const error = err as AxiosError<APIError>;
+    throw new Error(error.response?.data?.error || "Login failed");
   }
 };
 
-export const signupUser = async (credentials: SignupCredentials): Promise<AuthResponse> => {
+// Signup
+export const signupUser = async (
+  credentials: SignupCredentials
+): Promise<AuthResponse> => {
   try {
-    // Combine first and last name for the API
     const userData = {
       name: `${credentials.firstName} ${credentials.lastName}`,
       email: credentials.email,
       password: credentials.password,
+      newsletter: credentials.newsletter ?? false,
     };
-    
-    const response = await axios.post('/api/auth/signup', userData);
+
+    const response = await axios.post<AuthResponse>(
+      "/api/auth/signup",
+      userData
+    );
     return response.data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.error || 'Signup failed');
+  } catch (err) {
+    const error = err as AxiosError<APIError>;
+    throw new Error(error.response?.data?.error || "Signup failed");
   }
 };
 
+// Google login
 export const loginWithGoogle = async (token: string): Promise<AuthResponse> => {
   try {
-    const response = await axios.post('/api/auth/google', { token });
+    const response = await axios.post<AuthResponse>("/api/auth/google", {
+      token,
+    });
     return response.data;
-  } catch (error: any) {
-    throw new Error(error.response?.data?.error || 'Google login failed');
+  } catch (err) {
+    const error = err as AxiosError<APIError>;
+    throw new Error(error.response?.data?.error || "Google login failed");
   }
 };
 
-// Token management
+// ================== Token Management ==================
 export const setAuthToken = (token: string): void => {
-  localStorage.setItem('auth_token', token);
-  axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  if (typeof window !== "undefined") {
+    localStorage.setItem("auth_token", token);
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  }
 };
 
 export const getAuthToken = (): string | null => {
-  if (typeof window !== 'undefined') {
-    return localStorage.getItem('auth_token');
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("auth_token");
   }
   return null;
 };
 
 export const removeAuthToken = (): void => {
-  localStorage.removeItem('auth_token');
-  delete axios.defaults.headers.common['Authorization'];
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("auth_token");
+    delete axios.defaults.headers.common["Authorization"];
+  }
 };
