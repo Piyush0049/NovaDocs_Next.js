@@ -9,6 +9,7 @@ import PDFViewerToolbar from "./PDFComponents/PDFViewerToolbar";
 import PDFViewerContent from "./PDFComponents/PDFViewerContent";
 import PDFViewerStatusBar from "./PDFComponents/PDFViewerStatusBar";
 import PDFEditor from "./PDFComponents/PDFEditor";
+import { useRouter } from "next/navigation";
 
 interface PDFViewerProps {
   file: PDFFile;
@@ -18,6 +19,7 @@ interface PDFViewerProps {
 export type ViewMode = 'view' | 'edit';
 
 export default function PDFViewer({ file, onClose }: PDFViewerProps) {
+  const router = useRouter();
   const [currentPage, setCurrentPage] = useState(1);
   const [zoom, setZoom] = useState(100);
   const [viewMode, setViewMode] = useState<ViewMode>('view');
@@ -35,6 +37,7 @@ export default function PDFViewer({ file, onClose }: PDFViewerProps) {
 
   const handleEdit = () => {
     setViewMode('edit');
+    router.push(`/file/${file.id}/edit`);
   };
 
   const handleBackToView = () => {
