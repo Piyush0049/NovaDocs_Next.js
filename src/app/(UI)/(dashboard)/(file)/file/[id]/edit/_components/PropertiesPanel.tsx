@@ -124,7 +124,7 @@ export default function PropertiesPanel({
 
         {/* Color */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-3 uppercase tracking-wide flex items-center gap-2">
+          <label className="text-sm font-medium text-gray-300 mb-3 uppercase tracking-wide flex items-center gap-2">
             <SwatchIcon className="w-4 h-4" />
             Color
           </label>
