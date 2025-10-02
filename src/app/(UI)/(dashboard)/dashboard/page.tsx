@@ -29,7 +29,6 @@ export default function Dashboard() {
   const [files, setFiles] = useState<PDFFile[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Fetch files from API or local storage
   useEffect(() => {
     const fetchFiles = async () => {
       try {
