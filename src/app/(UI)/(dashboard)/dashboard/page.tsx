@@ -32,7 +32,6 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchFiles = async () => {
       try {
-        // Check local storage first
         const cached = localStorage.getItem("user_files");
         if (cached) {
           setFiles(JSON.parse(cached));
