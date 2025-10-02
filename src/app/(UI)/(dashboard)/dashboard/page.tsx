@@ -36,8 +36,7 @@ export default function Dashboard() {
         if (cached) {
           setFiles(JSON.parse(cached));
         }
-
-        // Fetch from API
+      
         const res = await axios.get("/api/files/my-files", { withCredentials: true });
         const fetchedFiles: PDFFile[] = res.data.files.map((f: any) => ({
           id: f._id,
