@@ -86,7 +86,7 @@ export default function Dashboard() {
         name: f.name,
         size: f.size,
         uploadDate: f.uploadDate,
-        status: 'ready',  // literal type
+        status: 'ready',
         thumbnail: f.thumbnail,
         pageCount: Math.floor(Math.random() * 20) + 1,
         url: f.url
