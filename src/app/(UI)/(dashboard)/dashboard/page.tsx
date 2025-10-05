@@ -110,7 +110,6 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden z-[100000]">
-      {/* Animated Background */}
       <div className="fixed inset-0 pointer-events-none">
         <motion.div className="absolute top-1/4 right-1/4 w-96 h-96 bg-gradient-to-r from-blue-400/10 to-purple-500/10 rounded-full blur-3xl"
           animate={{ scale: [1, 1.2, 1], rotate: [0, 180, 360] }}
