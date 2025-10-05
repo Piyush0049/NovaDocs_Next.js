@@ -77,7 +77,6 @@ export default function Dashboard() {
     const updatedFiles = [...uploadedFiles, ...files];
     localStorage.setItem("user_files", JSON.stringify(updatedFiles));
 
-    // Simulate processing
     uploadedFiles.forEach((file, index) => {
       setTimeout(() => {
         setFiles(prev => prev.map(f =>
