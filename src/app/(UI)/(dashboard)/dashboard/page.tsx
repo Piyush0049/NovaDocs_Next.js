@@ -101,8 +101,6 @@ export default function Dashboard() {
   const handleFileDelete = (fileId: string) => {
     setFiles(prev => {
       const updated = prev.filter(f => f.id !== fileId);
-
-      // Update local storage
       localStorage.setItem("user_files", JSON.stringify(updated));
       return updated;
     });
