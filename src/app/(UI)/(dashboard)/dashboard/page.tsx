@@ -51,7 +51,6 @@ export default function Dashboard() {
 
         setFiles(fetchedFiles);
 
-        // Update local storage
         localStorage.setItem("user_files", JSON.stringify(fetchedFiles));
       } catch (error) {
         console.error("Error fetching files:", error);
