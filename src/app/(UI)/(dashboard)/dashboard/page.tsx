@@ -60,7 +60,6 @@ export default function Dashboard() {
     fetchFiles();
   }, []);
 
-  // Handle file upload
   const handleFileUpload = (newFiles: File[]) => {
     const uploadedFiles: PDFFile[] = newFiles.map((file) => ({
       id: Math.random().toString(36).substr(2, 9),
@@ -73,7 +72,6 @@ export default function Dashboard() {
       url: URL.createObjectURL(file)
     }));
 
-    // Update UI immediately
     setFiles(prev => [...uploadedFiles, ...prev]);
 
     // Update local storage
