@@ -74,7 +74,6 @@ export default function Dashboard() {
 
     setFiles(prev => [...uploadedFiles, ...prev]);
 
-    // Update local storage
     const updatedFiles = [...uploadedFiles, ...files];
     localStorage.setItem("user_files", JSON.stringify(updatedFiles));
 
