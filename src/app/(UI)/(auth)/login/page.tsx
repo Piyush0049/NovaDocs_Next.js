@@ -160,8 +160,6 @@ export default function LoginPage() {
             Welcome back! Please sign in to your account
           </p>
         </motion.div>
-
-        {/* Login Form Card */}
         <motion.div
           className="relative"
           initial={{ opacity: 0, y: 30 }}
