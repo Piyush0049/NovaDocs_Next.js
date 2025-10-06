@@ -74,7 +74,6 @@ export default function LoginPage() {
     if (apiError) setApiError(null);
   };
 
-  // ------------------- Google Login -------------------
   useEffect(() => {
     if (typeof window !== "undefined" && window.google) {
       window.google.accounts.id.initialize({
