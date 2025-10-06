@@ -267,8 +267,6 @@ export default function LoginPage() {
                   </motion.p>
                 )}
               </motion.div>
-
-              {/* Remember Me & Forgot Password */}
               <motion.div
                 className="flex items-center justify-between"
                 initial={{ opacity: 0, y: 10 }}
