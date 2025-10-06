@@ -179,8 +179,6 @@ export default function LoginPage() {
             )}
             
             <form onSubmit={handleSubmit} className="space-y-6">
-              
-              {/* Email Field */}
               <motion.div
                 className="space-y-2"
                 initial={{ opacity: 0, x: -20 }}
@@ -219,7 +217,6 @@ export default function LoginPage() {
                 )}
               </motion.div>
 
-              {/* Password Field */}
               <motion.div
                 className="space-y-2"
                 initial={{ opacity: 0, x: -20 }}
