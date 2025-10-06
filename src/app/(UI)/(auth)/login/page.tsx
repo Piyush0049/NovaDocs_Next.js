@@ -101,7 +101,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
-        credentials: "include" // important if backend sets cookie
+        credentials: "include"
       });
 
       const data = await res.json();
