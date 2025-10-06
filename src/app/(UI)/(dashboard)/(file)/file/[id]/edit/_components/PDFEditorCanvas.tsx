@@ -1,43 +1,29 @@
-"use client";
-
-import { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  ChevronLeftIcon, 
-  ChevronRightIcon,
   MagnifyingGlassPlusIcon,
   MagnifyingGlassMinusIcon,
+  ArrowDownTrayIcon,
+  PrinterIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
-  ArrowPathIcon,
-  HandRaisedIcon,
-  CursorArrowRaysIcon,
-  PencilIcon,
-  ChatBubbleLeftIcon,
-  PaintBrushIcon,
-  Square2StackIcon,
-  DocumentDuplicateIcon,
-  Bars3Icon,
-  XMarkIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
-  PrinterIcon,
-  ArrowDownTrayIcon,
-  ShareIcon,
-  BookmarkIcon
+  Bars3Icon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 interface PDFFile {
   id: string;
   name: string;
   url: string;
-  pageCount: number;
-  status: string;
+  status?: string;
+  pageCount?: number;
 }
 
 interface Annotation {
   id: string;
-  type: 'highlight' | 'comment' | 'drawing' | 'text' | 'shape' | 'image';
+  type: 'highlight' | 'comment' | 'text' | 'draw' | 'drawing' | 'shape' | 'image';
   page: number;
   x: number;
   y: number;
@@ -50,525 +36,54 @@ interface Annotation {
   opacity?: number;
   strokeWidth?: number;
   points?: Array<{ x: number; y: number }>;
+  imageUrl?: string;
 }
 
-interface PDFEditorCanvasProps {
+interface PDFViewerProps {
   file: PDFFile;
-  currentPage: number;
   zoom: number;
-  annotations: Annotation[];
-  selectedTool: string;
-  selectedAnnotation: string | null;
-  onPageChange: (page: number) => void;
   onZoomChange: (zoom: number) => void;
-  onAddAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  onUpdateAnnotation: (id: string, updates: Partial<Annotation>) => void;
-  onSelectAnnotation: (id: string | null) => void;
+  selectedTool?: string;
+  annotations?: Annotation[];
+  selectedAnnotation?: string | null;
+  onAddAnnotation?: (annotation: Omit<Annotation, 'id'>) => void;
+  onUpdateAnnotation?: (id: string, updates: Partial<Annotation>) => void;
+  onSelectAnnotation?: (id: string | null) => void;
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
 }
 
-// Thumbnail Component
-const PDFThumbnail = ({ 
-  pageNum, 
-  isActive, 
-  onClick,
-  pdfDoc 
-}: {
-  pageNum: number;
-  isActive: boolean;
-  onClick: () => void;
-  pdfDoc: any;
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return;
-
-    const renderThumbnail = async () => {
-      try {
-        const page = await pdfDoc.getPage(pageNum);
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
-        const context = canvas.getContext('2d');
-        if (!context) return;
-
-        const viewport = page.getViewport({ scale: 0.2 });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-        }).promise;
-
-        setIsLoaded(true);
-      } catch (error) {
-        console.error('Thumbnail render error:', error);
-      }
-    };
-
-    renderThumbnail();
-  }, [pdfDoc, pageNum]);
-
-  return (
-    <motion.div
-      onClick={onClick}
-      className={`relative cursor-pointer group mb-3 ${isActive ? 'ring-2 ring-blue-500' : ''}`}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-    >
-      <div className="relative bg-white rounded-lg shadow-md overflow-hidden">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-auto"
-          style={{ display: isLoaded ? 'block' : 'none' }}
-        />
-        {!isLoaded && (
-          <div className="w-full h-32 bg-gray-100 animate-pulse flex items-center justify-center">
-            <DocumentTextIcon className="w-8 h-8 text-gray-400" />
-          </div>
-        )}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-2">
-          <span className="text-white text-xs font-medium">Page {pageNum}</span>
-        </div>
-      </div>
-      {isActive && (
-        <motion.div
-          className="absolute -left-1 top-1/2 -translate-y-1/2 w-1 h-12 bg-blue-500 rounded-r"
-          layoutId="activeIndicator"
-        />
-      )}
-    </motion.div>
-  );
-};
-
-// Main PDF Canvas Renderer
-const PDFCanvasRenderer = ({ 
-  file, 
-  currentPage, 
-  zoom,
-  panOffset,
-  onLoad, 
-  onError,
-  onPdfDocLoad,
-  isDragging
-}: {
-  file: PDFFile;
-  currentPage: number;
-  zoom: number;
-  panOffset: { x: number; y: number };
-  onLoad: (pageCount: number) => void;
-  onError: (error: string) => void;
-  onPdfDocLoad: (pdfDoc: any) => void;
-  isDragging: boolean;
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const pdfDocRef = useRef<any>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadPDF = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-
-        if (!(window as any).pdfjsLib) {
-          await new Promise<void>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            script.onload = () => {
-              (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 
-                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-              resolve();
-            };
-            script.onerror = () => reject(new Error('Failed to load PDF.js'));
-            document.head.appendChild(script);
-          });
-        }
-
-        if (!isMounted) return;
-
-        const pdfjsLib = (window as any).pdfjsLib;
-        
-        if (!file.url) {
-          throw new Error('PDF URL is missing');
-        }
-
-        const loadingTask = pdfjsLib.getDocument({
-          url: file.url,
-          withCredentials: false,
-          isEvalSupported: false,
-        });
-        
-        const pdf = await loadingTask.promise;
-        
-        if (!isMounted) return;
-        
-        pdfDocRef.current = pdf;
-        onPdfDocLoad(pdf);
-        const totalPages = pdf.numPages;
-        
-        await renderPage(pdf, currentPage);
-        
-        if (!isMounted) return;
-
-        setLoading(false);
-        onLoad(totalPages);
-        
-      } catch (err: any) {
-        console.error('Error loading PDF:', err);
-        if (isMounted) {
-          const errorMessage = err.message || 'Failed to load PDF';
-          setError(errorMessage);
-          setLoading(false);
-          onError(errorMessage);
-        }
-      }
-    };
-
-    const renderPage = async (pdf: any, pageNum: number) => {
-      try {
-        if (!canvasRef.current) return;
-        
-        const page = await pdf.getPage(pageNum);
-        const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        
-        if (!context) {
-          throw new Error('Could not get canvas context');
-        }
-
-        const baseScale = 1.5;
-        const scale = baseScale * (zoom / 100);
-        const viewport = page.getViewport({ scale });
-        
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        
-        context.fillStyle = '#ffffff';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-
-        await page.render({
-          canvasContext: context,
-          viewport: viewport,
-        }).promise;
-        
-      } catch (err) {
-        console.error('Error rendering page:', err);
-        throw err;
-      }
-    };
-
-    if (!pdfDocRef.current) {
-      loadPDF();
-    } else {
-      renderPage(pdfDocRef.current, currentPage).catch(console.error);
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [file.url, currentPage, zoom, onLoad, onError, onPdfDocLoad]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-[400px]">
-        <div className="text-center">
-          <motion.div
-            className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
-          <p className="text-lg font-medium text-gray-800">Loading PDF...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-[400px]">
-        <div className="text-center max-w-md">
-          <ExclamationTriangleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Failed</h3>
-          <p className="text-sm text-gray-600 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div 
-      ref={containerRef}
-      className="relative overflow-hidden"
-      style={{
-        cursor: isDragging ? 'grabbing' : 'grab',
-        transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
-        transition: isDragging ? 'none' : 'transform 0.1s ease-out'
-      }}
-    >
-      <canvas
-        ref={canvasRef}
-        className="shadow-2xl"
-        style={{
-          display: 'block',
-          margin: '0 auto',
-          borderRadius: '8px',
-        }}
-      />
-    </div>
-  );
-};
-
-export default function PDFEditorCanvas({
-  file,
-  currentPage: initialPage,
-  zoom: initialZoom,
+// Annotation Overlay Component
+const AnnotationOverlay = React.memo(({
   annotations,
-  selectedTool: initialTool,
   selectedAnnotation,
-  onPageChange,
-  onZoomChange,
-  onAddAnnotation,
-  onUpdateAnnotation,
   onSelectAnnotation,
-}: PDFEditorCanvasProps) {
-  // State Management
-  const [currentPage, setCurrentPage] = useState(initialPage);
-  const [zoom, setZoom] = useState(initialZoom);
-  const [selectedTool, setSelectedTool] = useState(initialTool);
-  const [ready, setReady] = useState(false);
-  const [actualPageCount, setActualPageCount] = useState(file.pageCount || 1);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [drawingPoints, setDrawingPoints] = useState<Array<{ x: number; y: number }>>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  
-  // Refs
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
-  const pinchStartDistance = useRef<number | null>(null);
-  const lastTouchPosition = useRef<{ x: number; y: number } | null>(null);
-
-  // Check file readiness
-  const isFileReady = file && file.url && (
-    file.status === 'ready' || 
-    file.status === 'completed' || 
-    file.status === 'success' ||
-    (file.url && !file.status)
-  );
-
-  // Page change handler
-  const handlePageChange = useCallback((page: number) => {
-    if (page >= 1 && page <= actualPageCount) {
-      setCurrentPage(page);
-      onPageChange(page);
-      setPanOffset({ x: 0, y: 0 }); // Reset pan on page change
-    }
-  }, [actualPageCount, onPageChange]);
-
-  // Zoom handlers
-  const handleZoomIn = useCallback(() => {
-    const newZoom = Math.min(300, zoom + 25);
-    setZoom(newZoom);
-    onZoomChange(newZoom);
-  }, [zoom, onZoomChange]);
-
-  const handleZoomOut = useCallback(() => {
-    const newZoom = Math.max(25, zoom - 25);
-    setZoom(newZoom);
-    onZoomChange(newZoom);
-  }, [zoom, onZoomChange]);
-
-  const handleZoomReset = useCallback(() => {
-    setZoom(100);
-    onZoomChange(100);
-    setPanOffset({ x: 0, y: 0 });
-  }, [onZoomChange]);
-
-  // Touch handlers for pinch zoom
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const distance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-      pinchStartDistance.current = distance;
-    } else if (e.touches.length === 1 && selectedTool === 'pan') {
-      lastTouchPosition.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY
-      };
-    }
-  }, [selectedTool]);
-
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (e.touches.length === 2 && pinchStartDistance.current) {
-      e.preventDefault();
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const distance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-      
-      const scale = distance / pinchStartDistance.current;
-      const newZoom = Math.min(300, Math.max(25, zoom * scale));
-      setZoom(newZoom);
-      onZoomChange(newZoom);
-      pinchStartDistance.current = distance;
-    } else if (e.touches.length === 1 && selectedTool === 'pan' && lastTouchPosition.current) {
-      const deltaX = e.touches[0].clientX - lastTouchPosition.current.x;
-      const deltaY = e.touches[0].clientY - lastTouchPosition.current.y;
-      
-      setPanOffset(prev => ({
-        x: prev.x + deltaX,
-        y: prev.y + deltaY
-      }));
-      
-      lastTouchPosition.current = {
-        x: e.touches[0].clientX,
-        y: e.touches[0].clientY
-      };
-    }
-  }, [zoom, onZoomChange, selectedTool]);
-
-  const handleTouchEnd = useCallback(() => {
-    pinchStartDistance.current = null;
-    lastTouchPosition.current = null;
-  }, []);
-
-  // Mouse handlers for drag
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (selectedTool === 'pan') {
-      setIsDragging(true);
-      setDragStart({
-        x: e.clientX - panOffset.x,
-        y: e.clientY - panOffset.y
-      });
-    } else if (selectedTool === 'draw' && ready) {
-      setIsDrawing(true);
-      const rect = e.currentTarget.getBoundingClientRect();
-      const point = {
-        x: (e.clientX - rect.left - panOffset.x) * (100 / zoom),
-        y: (e.clientY - rect.top - panOffset.y) * (100 / zoom),
-      };
-      setDrawingPoints([point]);
-    }
-  }, [selectedTool, ready, zoom, panOffset]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isDragging && selectedTool === 'pan') {
-      setPanOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y
-      });
-    } else if (isDrawing && selectedTool === 'draw') {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const point = {
-        x: (e.clientX - rect.left - panOffset.x) * (100 / zoom),
-        y: (e.clientY - rect.top - panOffset.y) * (100 / zoom),
-      };
-      setDrawingPoints(prev => [...prev, point]);
-    }
-  }, [isDragging, isDrawing, selectedTool, dragStart, zoom, panOffset]);
-
-  const handleMouseUp = useCallback(() => {
-    if (isDragging) {
-      setIsDragging(false);
-    }
-    if (isDrawing && drawingPoints.length > 1) {
-      onAddAnnotation({
-        type: 'drawing',
-        page: currentPage,
-        x: Math.min(...drawingPoints.map(p => p.x)),
-        y: Math.min(...drawingPoints.map(p => p.y)),
-        color: '#ef4444',
-        opacity: 1,
-        strokeWidth: 3,
-        points: drawingPoints,
-      });
-    }
-    setIsDrawing(false);
-    setDrawingPoints([]);
-  }, [isDragging, isDrawing, drawingPoints, onAddAnnotation, currentPage]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === '=' || e.key === '+') {
-          e.preventDefault();
-          handleZoomIn();
-        } else if (e.key === '-') {
-          e.preventDefault();
-          handleZoomOut();
-        } else if (e.key === '0') {
-          e.preventDefault();
-          handleZoomReset();
-        }
-      } else {
-        if (e.key === 'ArrowLeft') {
-          handlePageChange(currentPage - 1);
-        } else if (e.key === 'ArrowRight') {
-          handlePageChange(currentPage + 1);
-        } else if (e.key === 'h') {
-          setSelectedTool('pan');
-        } else if (e.key === 'v') {
-          setSelectedTool('select');
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, handlePageChange, handleZoomIn, handleZoomOut, handleZoomReset]);
-
-  // Fullscreen handler
-  const toggleFullscreen = useCallback(() => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
-    }
-  }, []);
-
-  // Tool buttons configuration
-  const tools = [
-    { id: 'select', icon: CursorArrowRaysIcon, label: 'Select', shortcut: 'V' },
-    { id: 'pan', icon: HandRaisedIcon, label: 'Pan', shortcut: 'H' },
-    { id: 'highlight', icon: Square2StackIcon, label: 'Highlight' },
-    { id: 'comment', icon: ChatBubbleLeftIcon, label: 'Comment' },
-    { id: 'text', icon: DocumentTextIcon, label: 'Text' },
-    { id: 'draw', icon: PencilIcon, label: 'Draw' },
-    { id: 'shape', icon: DocumentDuplicateIcon, label: 'Shape' },
-  ];
-
-  const renderAnnotation = useCallback((annotation: Annotation) => {
+  onUpdateAnnotation,
+  zoom,
+  currentPage,
+  containerWidth,
+  containerHeight
+}: {
+  annotations: Annotation[];
+  selectedAnnotation: string | null;
+  onSelectAnnotation: (id: string | null) => void;
+  onUpdateAnnotation: (id: string, updates: Partial<Annotation>) => void;
+  zoom: number;
+  currentPage: number;
+  containerWidth: number;
+  containerHeight: number;
+}) => {
+  const renderAnnotation = (annotation: Annotation) => {
     if (annotation.page !== currentPage) return null;
 
     const scaledStyle: React.CSSProperties = {
       position: 'absolute',
-      left: `${annotation.x * (zoom / 100) + panOffset.x}px`,
-      top: `${annotation.y * (zoom / 100) + panOffset.y}px`,
+      left: `${annotation.x * (zoom / 100)}px`,
+      top: `${annotation.y * (zoom / 100)}px`,
       color: annotation.color,
       opacity: annotation.opacity || 1,
       cursor: 'pointer',
@@ -619,7 +134,13 @@ export default function PDFEditorCanvas({
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
               >
-                <p className="text-sm text-gray-700">{annotation.content}</p>
+                <textarea
+                  className="w-full p-2 border rounded resize-none"
+                  value={annotation.content || ''}
+                  onChange={(e) => onUpdateAnnotation(annotation.id, { content: e.target.value })}
+                  placeholder="Enter your comment..."
+                  rows={3}
+                />
               </motion.div>
             )}
           </motion.div>
@@ -636,20 +157,893 @@ export default function PDFEditorCanvas({
               border: selectedAnnotation === annotation.id ? '2px dashed #3b82f6' : 'none',
               padding: '4px 8px',
               borderRadius: '4px',
+              minWidth: '100px',
+              background: selectedAnnotation === annotation.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
             }}
             onClick={(e) => {
               e.stopPropagation();
               onSelectAnnotation(annotation.id);
             }}
           >
-            {annotation.content}
+            {selectedAnnotation === annotation.id ? (
+              <input
+                type="text"
+                value={annotation.content || ''}
+                onChange={(e) => onUpdateAnnotation(annotation.id, { content: e.target.value })}
+                className="bg-transparent border-none outline-none w-full"
+                placeholder="Enter text..."
+                autoFocus
+              />
+            ) : (
+              annotation.content || 'Click to edit'
+            )}
+          </motion.div>
+        );
+
+      case 'draw':
+      case 'drawing':
+        if (!annotation.points || annotation.points.length < 2) return null;
+        return (
+          <svg
+            key={annotation.id}
+            className="absolute inset-0 pointer-events-none"
+            style={{ 
+              zIndex: 15,
+              width: '100%',
+              height: '100%',
+            }}
+          >
+            <path
+              d={annotation.points
+                .map((point, index) => 
+                  `${index === 0 ? 'M' : 'L'} ${point.x * (zoom / 100)} ${point.y * (zoom / 100)}`
+                )
+                .join(' ')}
+              stroke={annotation.color || '#ef4444'}
+              strokeWidth={(annotation.strokeWidth || 3) * (zoom / 100)}
+              fill="none"
+              opacity={annotation.opacity || 1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        );
+
+      case 'shape':
+        return (
+          <motion.div
+            key={annotation.id}
+            style={{
+              ...scaledStyle,
+              width: (annotation.width || 0) * (zoom / 100),
+              height: (annotation.height || 0) * (zoom / 100),
+              border: `${(annotation.strokeWidth || 2) * (zoom / 100)}px solid ${annotation.color}`,
+              backgroundColor: 'transparent',
+              borderRadius: '4px',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectAnnotation(annotation.id);
+            }}
+          />
+        );
+
+      case 'image':
+        return (
+          <motion.div
+            key={annotation.id}
+            style={{
+              ...scaledStyle,
+              width: (annotation.width || 100) * (zoom / 100),
+              height: (annotation.height || 100) * (zoom / 100),
+              border: selectedAnnotation === annotation.id ? '2px solid #3b82f6' : 'none',
+              borderRadius: '4px',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectAnnotation(annotation.id);
+            }}
+            whileHover={{ scale: 1.02 }}
+          >
+            {annotation.imageUrl && (
+              <img
+                src={annotation.imageUrl}
+                alt="Annotation"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+              />
+            )}
           </motion.div>
         );
 
       default:
         return null;
     }
-  }, [currentPage, zoom, panOffset, selectedAnnotation, onSelectAnnotation]);
+  };
+
+  return (
+    <div className="absolute inset-0 pointer-events-none">
+      <div 
+        className="relative w-full h-full"
+        style={{ pointerEvents: 'auto' }}
+      >
+        {annotations.map(renderAnnotation)}
+      </div>
+    </div>
+  );
+});
+
+// Memoized PDF Renderer with annotation support
+const ContinuousPDFRenderer = React.memo(({ 
+  file, 
+  zoom,
+  selectedTool,
+  annotations,
+  selectedAnnotation,
+  onAddAnnotation,
+  onSelectAnnotation,
+  onUpdateAnnotation,
+  currentPage,
+  onLoad, 
+  onError,
+  onPdfDocLoad
+}: {
+  file: PDFFile;
+  zoom: number;
+  selectedTool: string;
+  annotations: Annotation[];
+  selectedAnnotation: string | null;
+  onAddAnnotation: (annotation: Omit<Annotation, 'id'>) => void;
+  onSelectAnnotation: (id: string | null) => void;
+  onUpdateAnnotation: (id: string, updates: Partial<Annotation>) => void;
+  currentPage: number;
+  onLoad: (pageCount: number) => void;
+  onError: (error: string) => void;
+  onPdfDocLoad: (pdfDoc: any) => void;
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pagesHostRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [drawingPoints, setDrawingPoints] = useState<Array<{ x: number; y: number }>>([]);
+  const pdfDocRef = useRef<any>(null);
+  const renderTasksRef = useRef<Map<number, any>>(new Map());
+  const isInitializedRef = useRef(false);
+  const scrollPositionRef = useRef({ x: 0, y: 0 });
+
+  // Handle image upload
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const imageUrl = event.target?.result as string;
+      if (imageUrl) {
+        // Get click position from stored scroll position
+        const x = scrollPositionRef.current.x;
+        const y = scrollPositionRef.current.y;
+        
+        onAddAnnotation({
+          type: 'image',
+          page: currentPage,
+          x,
+          y,
+          width: 100,
+          height: 100,
+          color: '#000000',
+          opacity: 1,
+          imageUrl,
+        });
+      }
+    };
+    reader.readAsDataURL(file);
+    
+    // Reset the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [currentPage, onAddAnnotation]);
+
+  // Handle canvas click for adding annotations
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (selectedTool === 'select' || !containerRef.current) return;
+    
+    const rect = (overlayRef.current || containerRef.current).getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (100 / zoom);
+    const y = (e.clientY - rect.top) * (100 / zoom);
+
+    // Store position for image upload
+    scrollPositionRef.current = { x, y };
+
+    // Clear any selected annotation
+    onSelectAnnotation(null);
+
+    switch (selectedTool) {
+      case 'comment':
+        onAddAnnotation({
+          type: 'comment',
+          page: currentPage,
+          x,
+          y,
+          color: '#3b82f6',
+          content: '',
+          width: 32,
+          height: 32,
+          opacity: 1,
+        });
+        break;
+
+      case 'highlight':
+        onAddAnnotation({
+          type: 'highlight',
+          page: currentPage,
+          x,
+          y,
+          width: 150,
+          height: 20,
+          color: '#fbbf24',
+          opacity: 0.6,
+        });
+        break;
+
+      case 'text':
+        onAddAnnotation({
+          type: 'text',
+          page: currentPage,
+          x,
+          y,
+          color: '#000000',
+          content: 'New text',
+          fontSize: 16,
+          fontFamily: 'Arial',
+          opacity: 1,
+        });
+        break;
+
+      case 'shape':
+        onAddAnnotation({
+          type: 'shape',
+          page: currentPage,
+          x,
+          y,
+          width: 100,
+          height: 100,
+          color: '#ef4444',
+          opacity: 0.8,
+          strokeWidth: 2,
+        });
+        break;
+
+      case 'image':
+        // Trigger file input
+        if (fileInputRef.current) {
+          fileInputRef.current.click();
+        }
+        break;
+    }
+  }, [selectedTool, zoom, currentPage, onAddAnnotation, onSelectAnnotation]);
+
+  // Handle drawing
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (selectedTool !== 'draw' || !containerRef.current) return;
+    
+    const rect = (overlayRef.current || containerRef.current).getBoundingClientRect();
+    setIsDrawing(true);
+    const point = {
+      x: (e.clientX - rect.left) * (100 / zoom),
+      y: (e.clientY - rect.top) * (100 / zoom),
+    };
+    setDrawingPoints([point]);
+  }, [selectedTool, zoom]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDrawing || selectedTool !== 'draw' || !containerRef.current) return;
+    
+    const rect = (overlayRef.current || containerRef.current).getBoundingClientRect();
+    const point = {
+      x: (e.clientX - rect.left) * (100 / zoom),
+      y: (e.clientY - rect.top) * (100 / zoom),
+    };
+    setDrawingPoints(prev => [...prev, point]);
+  }, [isDrawing, selectedTool, zoom]);
+
+  const handleMouseUp = useCallback(() => {
+    if (isDrawing && drawingPoints.length > 1) {
+      onAddAnnotation({
+        type: 'draw', // Use 'draw' consistently
+        page: currentPage,
+        x: Math.min(...drawingPoints.map(p => p.x)),
+        y: Math.min(...drawingPoints.map(p => p.y)),
+        color: '#ef4444',
+        opacity: 1,
+        strokeWidth: 3,
+        points: drawingPoints,
+      });
+    }
+    setIsDrawing(false);
+    setDrawingPoints([]);
+  }, [isDrawing, drawingPoints, onAddAnnotation, currentPage]);
+
+  // Memoized render single page function
+  const renderSinglePage = useCallback(async (page: any, pageNum: number, currentZoom: number): Promise<{ canvas: HTMLCanvasElement; textLayer: HTMLDivElement }> => {
+    const baseScale = 1.5;
+    const scale = baseScale * (currentZoom / 100);
+    const viewport = page.getViewport({ scale });
+    
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    
+    if (!context) {
+      throw new Error('Could not get canvas context');
+    }
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.cssText = `
+      display: block;
+      border-radius: 8px;
+    `;
+    
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    const existingTask = renderTasksRef.current.get(pageNum);
+    if (existingTask) {
+      try {
+        existingTask.cancel();
+      } catch (e) {
+        // Ignore cancellation errors
+      }
+    }
+
+    const renderTask = page.render({
+      canvasContext: context,
+      viewport: viewport,
+    });
+    
+    renderTasksRef.current.set(pageNum, renderTask);
+    
+    try {
+      await renderTask.promise;
+    } catch (error: any) {
+      if (error.name === 'RenderingCancelledException') {
+        throw error;
+      }
+      throw error;
+    } finally {
+      renderTasksRef.current.delete(pageNum);
+    }
+
+    // Create text layer for text selection
+    const textLayer = document.createElement('div');
+    textLayer.className = 'textLayer';
+    textLayer.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: ${canvas.width}px;
+      height: ${canvas.height}px;
+      overflow: hidden;
+      opacity: 0.2;
+      line-height: 1.0;
+      pointer-events: ${selectedTool === 'select' ? 'auto' : 'none'};
+    `;
+
+    try {
+      const textContent = await page.getTextContent();
+      const pdfjsLib = (window as any).pdfjsLib;
+      
+      if (pdfjsLib && typeof pdfjsLib.renderTextLayer === 'function') {
+        await pdfjsLib.renderTextLayer({
+          textContentSource: textContent,
+          container: textLayer,
+          viewport,
+          textDivs: [],
+          enhanceTextSelection: true,
+        }).promise;
+        
+        const textDivs = textLayer.querySelectorAll('div');
+        textDivs.forEach((div: HTMLDivElement) => {
+          div.style.pointerEvents = selectedTool === 'select' ? 'all' : 'none';
+          div.style.userSelect = selectedTool === 'select' ? 'text' : 'none';
+          div.style.webkitUserSelect = selectedTool === 'select' ? 'text' : 'none';
+          div.style.color = 'transparent';
+          div.style.position = 'absolute';
+          div.style.whiteSpace = 'pre';
+          div.style.cursor = selectedTool === 'select' ? 'text' : 'default';
+        });
+      }
+    } catch (e) {
+      console.warn(`Text layer render failed for page ${pageNum}:`, e);
+    }
+    
+    return { canvas, textLayer };
+  }, [selectedTool]);
+
+  const renderAllPages = useCallback(async (pdf: any, currentZoom: number) => {
+    if (!pagesHostRef.current) return;
+    
+    const container = pagesHostRef.current;
+    container.innerHTML = '';
+    
+    renderTasksRef.current.forEach((task) => {
+      try {
+        task.cancel();
+      } catch (e) {
+        // Ignore cancellation errors
+      }
+    });
+    renderTasksRef.current.clear();
+    
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      try {
+        const page = await pdf.getPage(pageNum);
+        const { canvas, textLayer } = await renderSinglePage(page, pageNum, currentZoom);
+        
+        const pageContainer = document.createElement('div');
+        pageContainer.className = 'pdf-page-container';
+        pageContainer.setAttribute('data-page-number', pageNum.toString());
+        pageContainer.style.cssText = `
+          position: relative;
+          margin: 20px auto;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          border-radius: 8px;
+          overflow: hidden;
+          background: white;
+          display: inline-block;
+        `;
+        
+        const pageLabel = document.createElement('div');
+        pageLabel.className = 'page-label';
+        pageLabel.textContent = `Page ${pageNum}`;
+        pageLabel.style.cssText = `
+          position: absolute;
+          top: -30px;
+          left: 0;
+          font-size: 12px;
+          color: #666;
+          font-weight: 500;
+          z-index: 10;
+        `;
+        
+        pageContainer.appendChild(pageLabel);
+        pageContainer.appendChild(canvas);
+        pageContainer.appendChild(textLayer);
+        
+        container.appendChild(pageContainer);
+        
+      } catch (err: any) {
+        if (err.name === 'RenderingCancelledException') {
+          continue;
+        }
+        console.error(`Error rendering page ${pageNum}:`, err);
+      }
+    }
+  }, [renderSinglePage]);
+
+  // Load PDF only once
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadPDF = async () => {
+      if (isInitializedRef.current) return;
+      
+      try {
+        setLoading(true);
+        setError(null);
+
+        if (!(window as any).pdfjsLib) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = () => {
+              (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              
+              const existing = document.querySelector('link[data-pdfjs-viewer]');
+              if (!existing) {
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css';
+                link.setAttribute('data-pdfjs-viewer', 'true');
+                document.head.appendChild(link);
+              }
+              resolve();
+            };
+            script.onerror = () => reject(new Error('Failed to load PDF.js'));
+            document.head.appendChild(script);
+          });
+        }
+
+        if (!isMounted) return;
+
+        const pdfjsLib = (window as any).pdfjsLib;
+        
+        if (!file.url) {
+          throw new Error('PDF URL is missing');
+        }
+
+        const loadingTask = pdfjsLib.getDocument({
+          url: file.url,
+          withCredentials: false,
+          isEvalSupported: false,
+        });
+        
+        const pdf = await loadingTask.promise;
+        
+        if (!isMounted) return;
+        
+        pdfDocRef.current = pdf;
+        onPdfDocLoad(pdf);
+        isInitializedRef.current = true;
+        
+        await renderAllPages(pdf, zoom);
+        
+        if (!isMounted) return;
+
+        setLoading(false);
+        onLoad(pdf.numPages);
+        
+      } catch (err: any) {
+        console.error('Error loading PDF:', err);
+        if (isMounted) {
+          const errorMessage = err.message || 'Failed to load PDF';
+          setError(errorMessage);
+          setLoading(false);
+          onError(errorMessage);
+        }
+      }
+    };
+
+    loadPDF();
+
+    return () => {
+      isMounted = false;
+      renderTasksRef.current.forEach((task) => {
+        try {
+          task.cancel();
+        } catch (e) {
+          // Ignore cancellation errors
+        }
+      });
+      renderTasksRef.current.clear();
+    };
+  }, [file.url]);
+
+  // Handle zoom changes and tool changes
+  useEffect(() => {
+    if (pdfDocRef.current && !loading && isInitializedRef.current) {
+      renderAllPages(pdfDocRef.current, zoom);
+    }
+  }, [zoom, selectedTool, renderAllPages, loading]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px]">
+        <div className="text-center">
+          <motion.div
+            className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          />
+          <p className="text-lg font-medium text-gray-800">Loading PDF...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px]">
+        <div className="text-center max-w-md">
+          <ExclamationTriangleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Failed</h3>
+          <p className="text-sm text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      ref={containerRef}
+      className="w-full h-full overflow-auto bg-gray-50 p-4"
+      style={{
+        textAlign: 'center',
+        userSelect: selectedTool === 'select' ? 'text' : 'none',
+        WebkitUserSelect: selectedTool === 'select' ? 'text' : 'none',
+        MozUserSelect: selectedTool === 'select' ? 'text' : 'none',
+        msUserSelect: selectedTool === 'select' ? 'text' : 'none'
+      }}
+    >
+      {/* Hidden file input for image upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleImageUpload}
+        style={{ display: 'none' }}
+      />
+      
+      <div className="relative inline-block">
+        <div ref={pagesHostRef} />
+        {/* Overlay layer (handles interactions and drawing) */}
+        <div
+          ref={overlayRef}
+          className="absolute inset-0"
+          style={{ 
+            cursor: selectedTool === 'draw' ? 'crosshair' : 
+                   selectedTool === 'select' ? 'text' : 
+                   selectedTool === 'image' ? 'crosshair' :
+                   'default' 
+          }}
+          onClick={handleCanvasClick}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          {/* Current drawing path */}
+          {isDrawing && drawingPoints.length > 1 && (
+            <svg className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
+              <path
+                d={drawingPoints
+                  .map((point, index) => 
+                    `${index === 0 ? 'M' : 'L'} ${point.x * (zoom / 100)} ${point.y * (zoom / 100)}`
+                  )
+                  .join(' ')}
+                stroke="#ef4444"
+                strokeWidth="3"
+                fill="none"
+                opacity="0.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
+          
+          {/* Render annotations for current page */}
+          <AnnotationOverlay
+            annotations={annotations.filter(ann => ann.page === currentPage)}
+            selectedAnnotation={selectedAnnotation}
+            onSelectAnnotation={onSelectAnnotation}
+            onUpdateAnnotation={onUpdateAnnotation}
+            zoom={zoom}
+            currentPage={currentPage}
+            containerWidth={overlayRef.current?.clientWidth || 0}
+            containerHeight={overlayRef.current?.clientHeight || 0}
+          />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// Memoized Thumbnail Component (unchanged)
+const PDFThumbnail = React.memo(({ 
+  pageNum, 
+  isActive, 
+  onClick,
+  pdfDoc 
+}: {
+  pageNum: number;
+  isActive: boolean;
+  onClick: () => void;
+  pdfDoc: any;
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const renderTaskRef = useRef<any>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current) return;
+
+    const renderThumbnail = async () => {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const canvas = canvasRef.current;
+        if (!canvas || !isMountedRef.current) return;
+        
+        const context = canvas.getContext('2d');
+        if (!context) return;
+
+        const viewport = page.getViewport({ scale: 0.2 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        if (renderTaskRef.current) {
+          try {
+            renderTaskRef.current.cancel();
+          } catch (e) {
+            // Ignore cancellation errors
+          }
+        }
+
+        const task = page.render({
+          canvasContext: context,
+          viewport: viewport,
+        });
+        renderTaskRef.current = task;
+        
+        await task.promise;
+        
+        if (isMountedRef.current) {
+          setIsLoaded(true);
+        }
+      } catch (error: any) {
+        if (error.name === 'RenderingCancelledException') {
+          return;
+        }
+      } finally {
+        renderTaskRef.current = null;
+      }
+    };
+
+    renderThumbnail();
+  }, [pdfDoc, pageNum]);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch (e) {
+          // Ignore cancellation errors
+        }
+      }
+    };
+  }, []);
+
+  return (
+    <motion.div
+      onClick={onClick}
+      className={`relative cursor-pointer group mb-3 ${isActive ? 'ring-2 ring-blue-500' : ''}`}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      <div className="relative bg-white rounded-lg shadow-md overflow-hidden">
+        <canvas
+          ref={canvasRef}
+          className="w-full h-auto"
+          style={{ display: isLoaded ? 'block' : 'none' }}
+        />
+        {!isLoaded && (
+          <div className="w-full h-32 bg-gray-100 animate-pulse flex items-center justify-center">
+            <DocumentTextIcon className="w-8 h-8 text-gray-400" />
+          </div>
+        )}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent p-2">
+          <span className="text-white text-xs font-medium">Page {pageNum}</span>
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+export default function PDFViewer({
+  file,
+  zoom: initialZoom,
+  onZoomChange,
+  selectedTool = 'select',
+  annotations = [],
+  selectedAnnotation = null,
+  onAddAnnotation = () => {},
+  onUpdateAnnotation = () => {},
+  onSelectAnnotation = () => {},
+  currentPage = 1,
+  onPageChange = () => {},
+  onUndo = () => {},
+  onRedo = () => {},
+  canUndo = false,
+  canRedo = false,
+}: PDFViewerProps) {
+  const [zoom, setZoom] = useState(initialZoom);
+  const [ready, setReady] = useState(false);
+  const [actualPageCount, setActualPageCount] = useState(file.pageCount || 1);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [currentVisiblePage, setCurrentVisiblePage] = useState(currentPage);
+
+  const isFileReady = useMemo(() => file && file.url && (
+    file.status === 'ready' || 
+    file.status === 'completed' || 
+    file.status === 'success' ||
+    (file.url && !file.status)
+  ), [file]);
+
+  const handleZoomIn = useCallback(() => {
+    const newZoom = Math.min(300, zoom + 25);
+    setZoom(newZoom);
+    onZoomChange(newZoom);
+  }, [zoom, onZoomChange]);
+
+  const handleZoomOut = useCallback(() => {
+    const newZoom = Math.max(25, zoom - 25);
+    setZoom(newZoom);
+    onZoomChange(newZoom);
+  }, [zoom, onZoomChange]);
+
+  const handleZoomReset = useCallback(() => {
+    setZoom(100);
+    onZoomChange(100);
+  }, [onZoomChange]);
+
+  const scrollToPage = useCallback((pageNum: number) => {
+    const pageContainer = document.querySelector(`.pdf-page-container[data-page-number="${pageNum}"]`) as HTMLElement;
+    if (pageContainer) {
+      pageContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setCurrentVisiblePage(pageNum);
+      onPageChange(pageNum);
+    }
+  }, [onPageChange]);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  }, []);
+
+  const handleLoad = useCallback((totalPages: number) => {
+    setReady(true);
+    setActualPageCount(totalPages);
+  }, []);
+
+  const handleError = useCallback((error: string) => {
+    console.error('PDF Error:', error);
+    setReady(false);
+  }, []);
+
+  const handlePdfDocLoad = useCallback((pdfDoc: any) => {
+    setPdfDoc(pdfDoc);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          handleZoomIn();
+        } else if (e.key === '-') {
+          e.preventDefault();
+          handleZoomOut();
+        } else if (e.key === '0') {
+          e.preventDefault();
+          handleZoomReset();
+        } else if (e.key === 'z' && !e.shiftKey) {
+          e.preventDefault();
+          onUndo();
+        } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+          e.preventDefault();
+          onRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleZoomIn, handleZoomOut, handleZoomReset, onUndo, onRedo]);
 
   return (
     <div className="flex h-full bg-gray-50 relative">
@@ -663,7 +1057,6 @@ export default function PDFEditorCanvas({
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="w-64 bg-white border-r border-gray-200 flex flex-col shadow-lg"
           >
-            {/* Sidebar Header */}
             <div className="h-14 border-b border-gray-200 flex items-center justify-between px-4">
               <h3 className="font-semibold text-gray-800">Pages</h3>
               <button
@@ -674,14 +1067,13 @@ export default function PDFEditorCanvas({
               </button>
             </div>
             
-            {/* Thumbnails List */}
             <div className="flex-1 overflow-y-auto p-4">
               {pdfDoc && Array.from({ length: actualPageCount }, (_, i) => i + 1).map(pageNum => (
                 <PDFThumbnail
                   key={pageNum}
                   pageNum={pageNum}
-                  isActive={pageNum === currentPage}
-                  onClick={() => handlePageChange(pageNum)}
+                  isActive={pageNum === currentVisiblePage}
+                  onClick={() => scrollToPage(pageNum)}
                   pdfDoc={pdfDoc}
                 />
               ))}
@@ -695,7 +1087,6 @@ export default function PDFEditorCanvas({
         {/* Top Toolbar */}
         <div className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shadow-sm">
           <div className="flex items-center gap-4">
-            {/* Menu Toggle */}
             {!sidebarOpen && (
               <motion.button
                 initial={{ opacity: 0 }}
@@ -707,43 +1098,24 @@ export default function PDFEditorCanvas({
               </motion.button>
             )}
             
-            {/* File Name */}
             <div>
               <h2 className="text-lg font-semibold text-gray-900">{file.name}</h2>
               <p className="text-xs text-gray-500">
-                Page {currentPage} of {actualPageCount}
+                {actualPageCount} pages • Tool: {selectedTool}
               </p>
             </div>
           </div>
 
-          {/* Center Tools */}
-          <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-            {tools.map(tool => (
-              <motion.button
-                key={tool.id}
-                onClick={() => setSelectedTool(tool.id)}
-                className={`p-2 rounded-lg transition-all relative group ${
-                  selectedTool === tool.id
-                    ? 'bg-white shadow-md text-blue-600'
-                    : 'text-gray-600 hover:bg-gray-200'
-                }`}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <tool.icon className="w-5 h-5" />
-                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  <div className="bg-gray-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-                    {tool.label}
-                    {tool.shortcut && <span className="ml-1 opacity-75">({tool.shortcut})</span>}
-                  </div>
-                </div>
-              </motion.button>
-            ))}
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${ready ? 'bg-green-500' : 'bg-yellow-500'}`} />
+              <span className="text-sm text-gray-600">
+                {ready ? 'Ready' : 'Loading...'}
+              </span>
+            </div>
           </div>
 
-          {/* Right Actions */}
           <div className="flex items-center gap-2">
-            {/* Zoom Controls */}
             <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
                 onClick={handleZoomOut}
@@ -767,7 +1139,6 @@ export default function PDFEditorCanvas({
               </button>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => window.print()}
@@ -799,302 +1170,68 @@ export default function PDFEditorCanvas({
                   <ArrowsPointingOutIcon className="w-5 h-5 text-gray-600" />
                 )}
               </button>
-                            </div>
-          </div>
-        </div>
-
-        {/* Bottom Navigation Bar */}
-        <div className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
-            {/* Page Navigation */}
-            <div className="flex items-center gap-2">
-              <motion.button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <ChevronLeftIcon className="w-4 h-4" />
-              </motion.button>
-              
-              <div className="flex items-center gap-2 px-3 py-1 bg-gray-100 rounded-lg">
-                <input
-                  type="number"
-                  value={currentPage}
-                  onChange={(e) => {
-                    const page = parseInt(e.target.value);
-                    if (!isNaN(page)) {
-                      handlePageChange(page);
-                    }
-                  }}
-                  className="w-12 text-center bg-transparent border-none outline-none text-gray-700 text-sm"
-                  min={1}
-                  max={actualPageCount}
-                />
-                <span className="text-sm text-gray-500">of {actualPageCount}</span>
-              </div>
-              
-              <motion.button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === actualPageCount}
-                className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <ChevronRightIcon className="w-4 h-4" />
-              </motion.button>
             </div>
-
-            {/* Current Tool Display */}
-            <div className="px-3 py-1 bg-blue-50 border border-blue-200 rounded-lg">
-              <span className="text-sm font-medium text-blue-700">
-                {tools.find(t => t.id === selectedTool)?.label || 'Select'}
-              </span>
-            </div>
-
-            {/* Status */}
-            <div className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${ready ? 'bg-green-500' : 'bg-yellow-500'}`} />
-              <span className="text-sm text-gray-600">
-                {ready ? 'Ready' : 'Loading...'}
-              </span>
-            </div>
-          </div>
-
-          {/* Progress Bar */}
-          <div className="flex items-center gap-3">
-            <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-              <motion.div
-                className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
-                style={{ width: `${(currentPage / actualPageCount) * 100}%` }}
-                transition={{ duration: 0.3 }}
-              />
-            </div>
-            <span className="text-xs text-gray-500 font-medium">
-              {Math.round((currentPage / actualPageCount) * 100)}%
-            </span>
           </div>
         </div>
 
         {/* Main PDF Display Area */}
         <div className="flex-1 relative bg-gray-100 overflow-hidden">
-          <div
-            ref={canvasContainerRef}
-            className="w-full h-full overflow-auto"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            style={{ 
-              cursor: selectedTool === 'pan' ? (isDragging ? 'grabbing' : 'grab') : 
-                     selectedTool === 'draw' ? 'crosshair' : 
-                     'default' 
-            }}
-          >
-            {isFileReady ? (
-              <div className="flex items-center justify-center min-h-full p-8">
-                <div className="relative">
-                  <PDFCanvasRenderer
-                    file={file}
-                    currentPage={currentPage}
-                    zoom={zoom}
-                    panOffset={panOffset}
-                    onLoad={(totalPages) => {
-                      setReady(true);
-                      setActualPageCount(totalPages);
-                    }}
-                    onError={(error) => {
-                      console.error('PDF Error:', error);
-                      setReady(false);
-                    }}
-                    onPdfDocLoad={(pdfDoc) => {
-                      setPdfDoc(pdfDoc);
-                    }}
-                    isDragging={isDragging}
+          {isFileReady ? (
+            <ContinuousPDFRenderer
+              file={file}
+              zoom={zoom}
+              selectedTool={selectedTool}
+              annotations={annotations}
+              selectedAnnotation={selectedAnnotation}
+              onAddAnnotation={onAddAnnotation}
+              onUpdateAnnotation={onUpdateAnnotation}
+              onSelectAnnotation={onSelectAnnotation}
+              currentPage={currentVisiblePage}
+              onLoad={handleLoad}
+              onError={handleError}
+              onPdfDocLoad={handlePdfDocLoad}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center max-w-md">
+                <DocumentTextIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">PDF Not Available</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  {file.status === 'processing' 
+                    ? 'Your PDF is being processed. Please wait...' 
+                    : 'This PDF file is not ready for viewing.'}
+                </p>
+                {file.status === 'processing' && (
+                  <motion.div
+                    className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   />
-                  
-                  {/* Annotations Layer */}
-                  {ready && (
-                    <div className="absolute inset-0 pointer-events-none">
-                      <div 
-                        className="relative w-full h-full pointer-events-auto"
-                        onClick={handleCanvasClick}
-                      >
-                        {annotations.map(renderAnnotation)}
-                        
-                        {/* Current drawing path */}
-                        {isDrawing && drawingPoints.length > 1 && (
-                          <svg className="absolute inset-0 pointer-events-none">
-                            <path
-                              d={drawingPoints
-                                .map((point, index) => 
-                                  `${index === 0 ? 'M' : 'L'} ${point.x * (zoom / 100) + panOffset.x} ${point.y * (zoom / 100) + panOffset.y}`
-                                )
-                                .join(' ')}
-                              stroke="#ef4444"
-                              strokeWidth="3"
-                              fill="none"
-                              opacity="0.8"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
-            ) : (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center max-w-md">
-                  <DocumentTextIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-semibold text-gray-700 mb-2">PDF Not Available</h3>
-                  <p className="text-sm text-gray-500 mb-4">
-                    {file.status === 'processing' 
-                      ? 'Your PDF is being processed. Please wait...' 
-                      : 'This PDF file is not ready for viewing.'}
-                  </p>
-                  {file.status === 'processing' && (
-                    <motion.div
-                      className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    />
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Floating Action Buttons (Mobile) */}
-          <div className="absolute bottom-6 right-6 flex flex-col gap-3 md:hidden">
-            <motion.button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="w-12 h-12 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-            >
-              <DocumentDuplicateIcon className="w-6 h-6" />
-            </motion.button>
-            
-            <motion.button
-              onClick={toggleFullscreen}
-              className="w-12 h-12 bg-gray-800 text-white rounded-full shadow-lg flex items-center justify-center"
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-            >
-              {isFullscreen ? (
-                <ArrowsPointingInIcon className="w-6 h-6" />
-              ) : (
-                <ArrowsPointingOutIcon className="w-6 h-6" />
-              )}
-            </motion.button>
-          </div>
-
-          {/* Keyboard Shortcuts Help */}
-          <AnimatePresence>
-            {selectedTool === 'pan' && (
-              <motion.div
-                initial={{ opacity: 0, y: 50 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 50 }}
-                className="absolute bottom-6 left-6 bg-black/80 text-white px-4 py-2 rounded-lg text-sm"
-              >
-                <div className="flex items-center gap-2">
-                  <HandRaisedIcon className="w-4 h-4" />
-                  <span>Pan Mode: Click and drag to move • Press H to toggle</span>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Loading Overlay */}
-          {!ready && isFileReady && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="absolute inset-0 bg-white/90 flex items-center justify-center z-50"
-            >
-              <div className="text-center">
-                <motion.div
-                  className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                />
-                <p className="text-lg font-medium text-gray-800">Loading PDF...</p>
-                <p className="text-sm text-gray-600 mt-2">Please wait while we prepare your document</p>
-              </div>
-            </motion.div>
+            </div>
           )}
         </div>
+
+        {/* Loading Overlay */}
+        {!ready && isFileReady && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="absolute inset-0 bg-white/90 flex items-center justify-center z-50"
+          >
+            <div className="text-center">
+              <motion.div
+                className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              />
+              <p className="text-lg font-medium text-gray-800">Loading PDF...</p>
+              <p className="text-sm text-gray-600 mt-2">Preparing annotation tools...</p>
+            </div>
+          </motion.div>
+        )}
       </div>
     </div>
   );
-
-  // Canvas click handler for annotations
-  function handleCanvasClick(e: React.MouseEvent) {
-    if (selectedTool === 'select' || selectedTool === 'pan' || !ready) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left - panOffset.x) * (100 / zoom);
-    const y = (e.clientY - rect.top - panOffset.y) * (100 / zoom);
-
-    if (selectedTool === 'comment') {
-      const content = prompt('Enter your comment:');
-      if (!content) return;
-
-      onAddAnnotation({
-        type: 'comment',
-        page: currentPage,
-        x,
-        y,
-        color: '#3b82f6',
-        content,
-        width: 32,
-        height: 32,
-        opacity: 1,
-      });
-    } else if (selectedTool === 'highlight') {
-      onAddAnnotation({
-        type: 'highlight',
-        page: currentPage,
-        x,
-        y,
-        width: 150,
-        height: 20,
-        color: '#fbbf24',
-        opacity: 0.6,
-      });
-    } else if (selectedTool === 'text') {
-      const content = prompt('Enter text:');
-      if (!content) return;
-
-      onAddAnnotation({
-        type: 'text',
-        page: currentPage,
-        x,
-        y,
-        color: '#000000',
-        content,
-        fontSize: 16,
-        fontFamily: 'Arial',
-        opacity: 1,
-      });
-    } else if (selectedTool === 'shape') {
-      onAddAnnotation({
-        type: 'shape',
-        page: currentPage,
-        x,
-        y,
-        width: 100,
-        height: 100,
-        color: '#ef4444',
-        opacity: 0.8,
-        strokeWidth: 2,
-      });
-    }
-  }
 }

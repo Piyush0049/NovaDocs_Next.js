@@ -10,7 +10,7 @@ import {
   EyeIcon
 } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
-import PDFEditorCanvas from './PDFEditorCanvas';
+import PDFViewer from './PDFEditorCanvas';
 import AnnotationToolbar from './AnnotationToolbar';
 import AnnotationSidebar from './AnnotationSidebar';
 import PropertiesPanel from './PropertiesPanel';
@@ -340,22 +340,22 @@ export default function PDFEditor({ fileId }: PDFEditorProps) {
           )}
         </AnimatePresence>
 
-        {/* Canvas Container */}
+        {/* PDF Viewer */}
         <div className="flex-1 relative overflow-hidden bg-gray-850">
-          <PDFEditorCanvas
-            file={file}
-            currentPage={currentPage}
-            zoom={zoom}
-            annotations={annotations.filter(ann => ann.page === currentPage)}
-            selectedTool={selectedTool}
-            selectedAnnotation={selectedAnnotation}
-            onPageChange={setCurrentPage}
-            onZoomChange={setZoom}
-            onAddAnnotation={addAnnotation}
-            onUpdateAnnotation={updateAnnotation}
-            onSelectAnnotation={setSelectedAnnotation}
-          />
-        </div>
+        <PDFViewer
+          file={file}
+          zoom={zoom}
+          onZoomChange={setZoom}
+          selectedTool={selectedTool}
+          annotations={annotations}
+          selectedAnnotation={selectedAnnotation}
+          onAddAnnotation={(ann) => addAnnotation(ann as any)}
+          onUpdateAnnotation={(id, updates) => updateAnnotation(id, updates as any)}
+          onSelectAnnotation={setSelectedAnnotation}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+        />
+      </div>
 
         {/* Properties Panel */}
         <AnimatePresence>
