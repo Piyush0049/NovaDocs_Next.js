@@ -290,8 +290,6 @@ export default function LoginPage() {
                   Forgot password?
                 </Link>
               </motion.div>
-
-              {/* Sign In Button */}
               <motion.button
                 type="submit"
                 disabled={isLoading}
