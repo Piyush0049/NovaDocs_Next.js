@@ -57,7 +57,6 @@ interface PDFViewerProps {
   canRedo?: boolean;
 }
 
-// Annotation Overlay Component
 const AnnotationOverlay = React.memo(({
   annotations,
   selectedAnnotation,
@@ -317,6 +316,10 @@ const ContinuousPDFRenderer = React.memo(({
   const renderTasksRef = useRef<Map<number, any>>(new Map());
   const isInitializedRef = useRef(false);
   const scrollPositionRef = useRef({ x: 0, y: 0 });
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  const [selectionRect, setSelectionRect] = useState<DOMRect | null>(null);
+  const [showGeminiOptions, setShowGeminiOptions] = useState(false);
+  const [geminiOptionsPosition, setGeminiOptionsPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Handle image upload
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -471,6 +474,44 @@ const ContinuousPDFRenderer = React.memo(({
     setIsDrawing(false);
     setDrawingPoints([]);
   }, [isDrawing, drawingPoints, onAddAnnotation, currentPage]);
+
+  // Handle text selection for Gemini options
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (selectedTool !== 'select') {
+        setShowGeminiOptions(false);
+        setSelectedText(null);
+        setSelectionRect(null);
+        return;
+      }
+
+      const selection = window.getSelection();
+      const text = selection?.toString().trim();
+
+      if (text && text.length > 0) {
+        const range = selection?.getRangeAt(0);
+        if (range) {
+          const rect = range.getBoundingClientRect();
+          setSelectedText(text);
+          setSelectionRect(rect);
+          setGeminiOptionsPosition({
+            x: rect.left + window.scrollX + rect.width / 2,
+            y: rect.top + window.scrollY - 10, // Position above the selection
+          });
+          setShowGeminiOptions(true);
+        }
+      } else {
+        setShowGeminiOptions(false);
+        setSelectedText(null);
+        setSelectionRect(null);
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [selectedTool]);
 
   // Memoized render single page function
   const renderSinglePage = useCallback(async (page: any, pageNum: number, currentZoom: number): Promise<{ canvas: HTMLCanvasElement; textLayer: HTMLDivElement }> => {
