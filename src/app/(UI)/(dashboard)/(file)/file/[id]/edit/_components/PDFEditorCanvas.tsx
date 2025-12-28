@@ -64,8 +64,6 @@ const AnnotationOverlay = React.memo(({
   onUpdateAnnotation,
   zoom,
   currentPage,
-  containerWidth,
-  containerHeight
 }: {
   annotations: Annotation[];
   selectedAnnotation: string | null;
